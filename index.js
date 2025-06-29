@@ -1,29 +1,39 @@
 const express = require('express');
+const path = require('path');
+const bodyParser = require('body-parser');
+const { Configuration, OpenAIApi } = require('openai');
+
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
-
-app.get('/', (req, res) => {
-  res.send(`
-    <form action="/generate" method="post">
-      <label>シチュエーションを入力：</label><br>
-      <textarea name="situation" rows="6" cols="50"></textarea><br>
-      <button type="submit">プロンプト生成</button>
-    </form>
-  `);
+const configuration = new Configuration({
+  apiKey: process.env.OPENAI_API_KEY || "sk-xxxxxxx", // 本番は.envで管理推奨
 });
+const openai = new OpenAIApi(configuration);
 
-app.post('/generate', (req, res) => {
-  const input = req.body.situation;
+app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
-  // ↓ここに実際のプロンプト生成処理（仮でそのまま返す）
-  const prompt = `Prompt: ${input} を英語でプロンプトに変換しました`;
+app.post('/generate', async (req, res) => {
+  const { situation } = req.body;
 
-  res.send(`<p>生成されたプロンプト：</p><textarea rows="10" cols="60">${prompt}</textarea><br><a href="/">戻る</a>`);
+  try {
+    const prompt = `以下の日本語のシチュエーションを、Stable Diffusion用の英語プロンプトに変換し、人物像・構図・服装・背景・プレイ内容に分類して詳細に書き出して。:\n\n「${situation}」`;
+
+    const response = await openai.createChatCompletion({
+      model: "gpt-4",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.9,
+    });
+
+    const result = response.data.choices[0].message.content;
+    res.json({ result });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('生成に失敗しました');
+  }
 });
 
 app.listen(port, () => {
-  console.log(`サーバーがポート ${port} で起動中やで`);
+  console.log(`サーバーがポート ${port} で起動中`);
 });
