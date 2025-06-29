@@ -1,40 +1,25 @@
-const express = require('express');
-const path = require('path');
-const bodyParser = require('body-parser');
-const { Configuration, OpenAIApi } = require('openai');
-require('dotenv').config(); // .env使うやつ
-
-const app = express();
-const port = process.env.PORT || 3000;
-
-const configuration = new Configuration({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-const openai = new OpenAIApi(configuration);
-
-app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public'))); // publicフォルダにHTML置く
-
-app.post('/generate', async (req, res) => {
-  const { situation } = req.body;
-
-  const prompt = `以下の日本語のシチュエーションを、Stable Diffusion用の英語プロンプトに変換し、人物像・構図・背景・服装・プレイ内容に分けて詳細に英訳して。入力: ${situation}`;
-
-  try {
-    const response = await openai.createChatCompletion({
-      model: 'gpt-4',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.8,
-    });
-
-    const result = response.data.choices[0].message.content;
-    res.json({ result });
-  } catch (error) {
-    console.error(error);
-    res.status(500).send('生成に失敗しました');
-  }
-});
-
-app.listen(port, () => {
-  console.log(`サーバーがポート ${port} で起動中`);
-});
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>プロンプトストーリーツール</title>
+  <script>
+    async function generatePrompt() {
+      const situation = document.getElementById("situation").value;
+      const response = await fetch("/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ situation }),
+      });
+      const data = await response.json();
+      document.getElementById("result").innerText = data.result || "失敗しました";
+    }
+  </script>
+</head>
+<body>
+  <h1>プロンプトストーリーツール</h1>
+  <textarea id="situation" rows="5" cols="60" placeholder="シチュエーションを入力してください"></textarea><br>
+  <button onclick="generatePrompt()">生成</button>
+  <pre id="result"></pre>
+</body>
+</html>
