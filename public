@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>プロンプトストーリーツール</title>
+  <script>
+    async function generatePrompt() {
+      const situation = document.getElementById("situation").value;
+      const response = await fetch("/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ situation }),
+      });
+      const data = await response.json();
+      document.getElementById("result").innerText = data.result || "失敗しました";
+    }
+  </script>
+</head>
+<body>
+  <h1>プロンプトストーリーツール</h1>
+  <textarea id="situation" rows="5" cols="60" placeholder="シチュエーションを入力してください"></textarea><br>
+  <button onclick="generatePrompt()">生成</button>
+  <pre id="result"></pre>
+</body>
+</html>
