@@ -1,47 +1,67 @@
 import express from 'express';
 import bodyParser from 'body-parser';
-import { OpenAI } from 'openai';
-import dotenv from 'dotenv';
 import cors from 'cors';
+import dotenv from 'dotenv';
+import { OpenAI } from 'openai';
+import fs from 'fs';
+import archiver from 'archiver';
 
-dotenv.config();
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 10000;
 
+// Load .env
+dotenv.config();
+
+// Init OpenAI
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Middleware
 app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static('public'));
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
+// Prompt Generator Endpoint
 app.post('/generate', async (req, res) => {
-  const { situation } = req.body;
-
   try {
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
+    const situation = req.body.situation;
+    const gptResponse = await openai.chat.completions.create({
       messages: [
         {
           role: 'system',
-          content: '与えられたシチュエーションに基づいて、英語の画像生成用プロンプトを構成してください。人物像、背景、服装、体勢、行為内容、必要なLoRA名、ネガティブプロンプトを含めて構成してください。',
+          content: 'You are an expert prompt generator for Stable Diffusion. Based on the user's erotic story setting, you will decompose it into background, character, outfit, pose, play, and generate an English prompt, negative prompt, and suggest required LoRA models if needed.'
         },
         {
           role: 'user',
-          content: situation,
-        },
+          content: `シチュエーション: ${situation}`
+        }
       ],
+      model: 'gpt-4o'
     });
 
-    const result = completion.choices[0].message.content;
-    res.send({ result });
+    const reply = gptResponse.choices[0].message.content;
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync('logs.txt', `\n[${timestamp}]\n${situation}\n${reply}\n`);
+    res.send({ result: reply });
   } catch (error) {
-    console.error('エラー:', error.message);
-    res.status(500).send('エラーが発生しました');
+    console.error(error);
+    res.status(500).send('プロンプト生成中にエラーが発生しました');
   }
 });
 
+// Zip logs route
+app.get('/download-logs', (req, res) => {
+  const output = fs.createWriteStream('logs.zip');
+  const archive = archiver('zip', { zlib: { level: 9 } });
+
+  output.on('close', () => {
+    res.download('logs.zip');
+  });
+
+  archive.pipe(output);
+  archive.file('logs.txt', { name: 'logs.txt' });
+  archive.finalize();
+});
+
 app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+  console.log(`サーバー実行中: http://localhost:${port}`);
 });
