@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
-import { OpenAIApi, Configuration } from 'openai';
+import OpenAI from 'openai';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -11,10 +11,9 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 10000;
 
-const configuration = new Configuration({
+const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
-const openai = new OpenAIApi(configuration);
 
 app.use(cors());
 app.use(bodyParser.json());
@@ -35,13 +34,13 @@ app.post('/generate', async (req, res) => {
 4. LoRA候補`;
 
   try {
-    const completion = await openai.createChatCompletion({
+    const completion = await openai.chat.completions.create({
       model: 'gpt-4',
       messages: [{ role: 'user', content: promptText }],
       temperature: 0.9
     });
 
-    const output = completion.data.choices[0].message.content;
+    const output = completion.choices[0].message.content;
 
     const result = {
       prompt: '',
