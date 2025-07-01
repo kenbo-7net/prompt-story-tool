@@ -21,14 +21,15 @@ app.use(bodyParser.json());
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ✅ 静的ファイルをpublicから返す
+// 静的ファイルをpublicフォルダから返す
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ✅ ルートに来たとき index.html を返す
+// ルートアクセス時にindex.htmlを返す
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// プロンプト生成処理
 app.post('/generate', async (req, res) => {
   const { situation } = req.body;
 
@@ -40,7 +41,7 @@ app.post('/generate', async (req, res) => {
 
   try {
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
+      model: 'gpt-3.5-turbo',
       messages: [{ role: 'user', content: promptText }],
       temperature: 0.9
     });
@@ -64,11 +65,12 @@ app.post('/generate', async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error(error);
-    res.status(500).send('エラーが発生しました');
+    console.error('❌ APIエラー:', error);
+    res.status(500).send('生成エラーが発生しました');
   }
 });
 
 app.listen(port, () => {
-  console.log(`サーバーの実行 http://localhost:${port}`);
+  console.log(`✅ サーバー起動中: http://localhost:${port}`);
 });
+
