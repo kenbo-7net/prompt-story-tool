@@ -2,70 +2,68 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NSFWプロンプト生成ツール</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NSFWプロンプト構成ツール</title>
   <style>
     body {
       font-family: sans-serif;
-      background: #121212;
-      color: #f0f0f0;
+      background: #111;
+      color: #eee;
       margin: 0;
       padding: 2rem;
     }
     h1 {
       text-align: center;
-      margin-bottom: 2rem;
-      font-size: 2rem;
+      color: #ff69b4;
     }
     form {
-      max-width: 720px;
+      max-width: 600px;
       margin: 0 auto;
-      background: #1e1e1e;
+      background: #222;
       padding: 2rem;
-      border-radius: 12px;
-      box-shadow: 0 0 15px rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(255,105,180,0.3);
     }
     textarea {
       width: 100%;
-      height: 140px;
-      margin-bottom: 1.5rem;
+      height: 120px;
+      margin-bottom: 1rem;
       padding: 1rem;
       font-size: 1rem;
-      background: #2a2a2a;
+      background: #333;
       color: #fff;
-      border: 1px solid #555;
-      border-radius: 8px;
+      border: none;
+      border-radius: 5px;
     }
     button {
-      background: #ff4d6d;
+      background: #ff69b4;
       color: white;
       border: none;
       padding: 0.75rem 1.5rem;
       font-size: 1rem;
-      border-radius: 8px;
+      border-radius: 5px;
       cursor: pointer;
-    }
-    button:hover {
-      background: #ff2e52;
     }
     .result {
       margin-top: 2rem;
-      background: #1b1b1b;
-      padding: 1.5rem;
-      border-radius: 8px;
+      background: #222;
+      padding: 1rem;
+      border-radius: 5px;
       white-space: pre-wrap;
-      border: 1px solid #444;
+      border: 1px solid #555;
     }
   </style>
 </head>
 <body>
-  <h1>NSFWプロンプト生成ツール</h1>
+  <h1>NSFWプロンプト構成ツール</h1>
   <form id="promptForm">
-    <label for="situation">シチュエーション（日本語で）:</label><br />
-    <textarea id="situation" name="situation" placeholder="例：ライバーが配信を切り忘れてオナニーを晒してしまった"></textarea><br />
-    <button type="submit">プロンプトを生成する</button>
+    <label for="situation">シチュエーション（日本語）:</label><br/>
+    <textarea id="situation" name="situation" placeholder="例：車の後部座席でフェラする銀髪スレンダー美女"></textarea><br/>
+    <button type="submit">プロンプト生成</button>
   </form>
+
   <div class="result" id="result"></div>
+
   <script>
     const form = document.getElementById("promptForm");
     const result = document.getElementById("result");
@@ -73,16 +71,17 @@
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const situation = document.getElementById("situation").value;
+
       result.textContent = "生成中...";
 
-      const res = await fetch("/api/generate", {
+      const res = await fetch("/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ situation }),
       });
 
       const data = await res.json();
-      result.textContent = data.prompt || "生成に失敗しました。エラーログを確認してください。";
+      result.textContent = data.prompt || "プロンプト生成に失敗しました。";
     });
   </script>
 </body>
