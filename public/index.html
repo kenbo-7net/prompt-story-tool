@@ -3,112 +3,97 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>エロ特化プロンプト構成ツール</title>
+  <title>AIプロンプト生成ツール</title>
   <style>
     body {
       font-family: sans-serif;
-      background: #f9f9f9;
-      margin: 0;
+      background: #f8f8f8;
       padding: 2rem;
-    }
-    h1 {
-      text-align: center;
-      margin-bottom: 2rem;
     }
     form {
-      max-width: 700px;
-      margin: auto;
-      background: #fff;
+      background: white;
       padding: 2rem;
       border-radius: 10px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      max-width: 600px;
+      margin: auto;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
     }
     textarea, input[type="file"] {
       width: 100%;
       margin-bottom: 1rem;
-      font-size: 1rem;
-      padding: 0.75rem;
+      padding: 1rem;
     }
     button {
-      background-color: #ff3366;
+      padding: 1rem 2rem;
+      background: #4caf50;
       color: white;
       border: none;
-      padding: 1rem;
+      border-radius: 5px;
       font-size: 1rem;
       cursor: pointer;
-      border-radius: 5px;
     }
     .result {
       margin-top: 2rem;
-      background: #eef;
       padding: 1rem;
-      border-radius: 5px;
+      background: #eef;
       white-space: pre-wrap;
+      border-radius: 5px;
     }
   </style>
 </head>
 <body>
-  <h1>AIエロプロンプト生成ツール</h1>
-  <form id="captionForm">
-    <label>画像を選択：</label>
-    <input type="file" id="imageInput" accept="image/*" /><br/>
-
-    <button type="submit">画像からキャプション生成</button>
-  </form>
-
   <form id="promptForm">
-    <label>シチュエーションを入力：</label>
-    <textarea id="situation" placeholder="例：配信事故でライバーが自慰バレした…など"></textarea><br/>
-    <button type="submit">プロンプト生成</button>
+    <h2>画像＋シチュからプロンプト生成</h2>
+
+    <label>画像ファイルを選択（任意）:</label>
+    <input type="file" id="imageInput" accept="image/*" />
+
+    <label>シチュエーション（日本語）:</label>
+    <textarea id="situation" placeholder="例：ライバーが配信切り忘れて自慰がバレた"></textarea>
+
+    <button type="submit">生成開始</button>
   </form>
 
   <div class="result" id="result"></div>
 
   <script>
-    const captionForm = document.getElementById("captionForm");
-    const promptForm = document.getElementById("promptForm");
-    const result = document.getElementById("result");
+    const form = document.getElementById("promptForm");
+    const resultDiv = document.getElementById("result");
 
-    captionForm.addEventListener("submit", async (e) => {
+    form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const file = document.getElementById("imageInput").files[0];
-      if (!file) return alert("画像を選んでください");
+      resultDiv.textContent = "生成中...";
 
-      result.textContent = "画像からキャプションを生成中...";
+      const imageInput = document.getElementById("imageInput").files[0];
+      const situationText = document.getElementById("situation").value;
 
-      const formData = new FormData();
-      formData.append("image", file);
+      let captionText = "";
 
-      const res = await fetch("/api/caption", {
-        method: "POST",
-        body: formData,
-      });
+      if (imageInput) {
+        const imageForm = new FormData();
+        imageForm.append("image", imageInput);
 
-      const data = await res.json();
-      if (data.caption) {
-        document.getElementById("situation").value = data.caption;
-        result.textContent = "キャプション生成成功 → テキスト欄に反映しました";
-      } else {
-        result.textContent = "キャプション生成に失敗しました";
+        const captionRes = await fetch("/api/caption", {
+          method: "POST",
+          body: imageForm
+        });
+
+        const captionData = await captionRes.json();
+        captionText = captionData.caption || "";
       }
-    });
 
-    promptForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const situation = document.getElementById("situation").value;
-      if (!situation) return alert("シチュエーションを入力してください");
-
-      result.textContent = "プロンプト生成中...";
+      const finalPromptInput = situationText + (captionText ? `。画像内容: ${captionText}` : "");
 
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ situation }),
+        body: JSON.stringify({ situation: finalPromptInput })
       });
 
       const data = await res.json();
-      result.textContent = data.prompt || "プロンプト生成に失敗しました";
+      resultDiv.textContent = data.prompt || "プロンプト生成に失敗しました。";
     });
   </script>
 </body>
 </html>
+
