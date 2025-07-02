@@ -14,10 +14,10 @@ app.use(express.static('public'));
 
 // OpenRouterクライアントの初期化
 const openai = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY, // ← .env に合わせた
   baseURL: 'https://openrouter.ai/api/v1',
   defaultHeaders: {
-    'HTTP-Referer': 'https://あなたのサービスURL', // WebツールのURL
+    'HTTP-Referer': 'https://prompt-story-tool.onrender.com', // ← あなたのサイトURL
     'X-Title': 'Prompt Story Tool'
   }
 });
@@ -37,7 +37,12 @@ app.post('/api/generate', async (req, res) => {
         {
           role: 'system',
           content:
-            'あなたはNSFW画像を生成するための英語プロンプト職人です。日本語のシチュエーションから、Stable Diffusion向けに詳細な英語プロンプトを1文にまとめてください。人物像、背景、体勢、服装、プレイ内容を含め、最高品質、8K、巨乳、フェラ、スレンダーなどのワードを使用して、ネガティブプロンプトも同時に出力してください。'
+            'あなたはNSFWイラストを生成するためのプロンプトエンジニアです。以下の日本語シチュエーションをもとに、Stable Diffusion向けの高品質なプロンプト（英語）を作成してください。\n\n' +
+            '・人物の特徴（髪型・体型・表情・服装）\n' +
+            '・シチュエーション（背景や場所）\n' +
+            '・プレイ内容（NSFW表現あり）\n' +
+            '・明確な構図（例：見上げ構図、横顔、後部座席など）\n\n' +
+            '出力形式：\nPrompt: ～\nNegative Prompt: ～'
         },
         {
           role: 'user',
@@ -48,6 +53,7 @@ app.post('/api/generate', async (req, res) => {
     });
 
     const reply = response.choices[0].message.content;
+
     res.json({ prompt: reply });
   } catch (err) {
     console.error('❌ APIエラー:', err);
@@ -58,4 +64,5 @@ app.post('/api/generate', async (req, res) => {
 app.listen(port, () => {
   console.log(`✅ サーバー起動中: http://localhost:${port}`);
 });
+
 
