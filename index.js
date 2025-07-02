@@ -12,15 +12,14 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static('public'));
 
-// タイムアウト設定（15秒）
-app.use((req, res, next) => {
-  res.setTimeout(15000); 
-  next();
-});
-
-// OpenAI 初期化
+// OpenRouterクライアントの初期化
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: 'https://openrouter.ai/api/v1',
+  defaultHeaders: {
+    'HTTP-Referer': 'https://あなたのサービスURL', // WebツールのURL
+    'X-Title': 'Prompt Story Tool'
+  }
 });
 
 // プロンプト生成API
@@ -32,35 +31,31 @@ app.post('/api/generate', async (req, res) => {
   }
 
   try {
-    console.log('🔄 プロンプト生成リクエスト受信:', situation);
-
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: process.env.MODEL_NAME,
       messages: [
         {
           role: 'system',
-          content: 'あなたはAI画像生成用のプロンプト職人です。入力された日本語のシチュエーションから、アニメ調の高品質画像を生成するための詳細な英語プロンプトを出力してください。人物像、背景、体勢、服装、プレイ内容に分解して記述し、英語で1つのプロンプト文として完成させてください。ネガティブプロンプトも自動で出力してください。'
+          content:
+            'あなたはNSFW画像を生成するための英語プロンプト職人です。日本語のシチュエーションから、Stable Diffusion向けに詳細な英語プロンプトを1文にまとめてください。人物像、背景、体勢、服装、プレイ内容を含め、最高品質、8K、巨乳、フェラ、スレンダーなどのワードを使用して、ネガティブプロンプトも同時に出力してください。'
         },
         {
           role: 'user',
           content: `シチュエーション: ${situation}`
         }
       ],
-      temperature: 0.8,
+      temperature: 0.8
     });
 
     const reply = response.choices[0].message.content;
-    console.log('✅ プロンプト生成成功');
     res.json({ prompt: reply });
   } catch (err) {
     console.error('❌ APIエラー:', err);
-    res.status(500).json({ 
-      error: 'プロンプト生成に失敗しました',
-      detail: err.message || JSON.stringify(err)
-    });
+    res.status(500).json({ error: 'プロンプト生成に失敗しました' });
   }
 });
 
 app.listen(port, () => {
-  console.log(`🚀 サーバー起動中: http://localhost:${port}`);
+  console.log(`✅ サーバー起動中: http://localhost:${port}`);
 });
+
