@@ -1,64 +1,61 @@
-<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>NSFWプロンプト構成ツール</title>
+  <title>Prompt Story Tool</title>
   <style>
     body {
       font-family: sans-serif;
-      background: #111;
-      color: #eee;
+      background: #f7f7f7;
       margin: 0;
       padding: 2rem;
     }
     h1 {
       text-align: center;
-      color: #ff69b4;
     }
     form {
-      max-width: 600px;
+      max-width: 700px;
       margin: 0 auto;
-      background: #222;
+      background: #fff;
       padding: 2rem;
       border-radius: 8px;
-      box-shadow: 0 0 10px rgba(255,105,180,0.3);
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
     }
-    textarea {
+    textarea, input[type="file"] {
       width: 100%;
-      height: 120px;
       margin-bottom: 1rem;
       padding: 1rem;
       font-size: 1rem;
-      background: #333;
-      color: #fff;
-      border: none;
-      border-radius: 5px;
     }
     button {
-      background: #ff69b4;
+      background: #4CAF50;
       color: white;
       border: none;
       padding: 0.75rem 1.5rem;
       font-size: 1rem;
       border-radius: 5px;
       cursor: pointer;
+      margin-right: 1rem;
     }
     .result {
       margin-top: 2rem;
-      background: #222;
+      background: #eef;
       padding: 1rem;
       border-radius: 5px;
       white-space: pre-wrap;
-      border: 1px solid #555;
     }
   </style>
 </head>
 <body>
-  <h1>NSFWプロンプト構成ツール</h1>
+  <h1>NSFWプロンプト生成ツール</h1>
   <form id="promptForm">
-    <label for="situation">シチュエーション（日本語）:</label><br/>
-    <textarea id="situation" name="situation" placeholder="例：車の後部座席でフェラする銀髪スレンダー美女"></textarea><br/>
+    <label for="situation">シチュエーション入力（日本語）:</label><br/>
+    <textarea id="situation" name="situation" placeholder="例：ライバーが配信切り忘れて自慰がバレた"></textarea><br/>
+
+    <label for="image">または画像をアップロード:</label><br/>
+    <input type="file" id="image" accept="image/*"/><br/>
+
+    <button type="button" id="captionBtn">画像から説明生成</button>
     <button type="submit">プロンプト生成</button>
   </form>
 
@@ -67,23 +64,41 @@
   <script>
     const form = document.getElementById("promptForm");
     const result = document.getElementById("result");
+    const captionBtn = document.getElementById("captionBtn");
+    const imageInput = document.getElementById("image");
+
+    captionBtn.addEventListener("click", async () => {
+      const file = imageInput.files[0];
+      if (!file) return alert("画像を選択してください。");
+
+      const formData = new FormData();
+      formData.append("image", file);
+
+      result.textContent = "画像を解析中...";
+      const res = await fetch("/api/caption", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      document.getElementById("situation").value = data.caption || "解析失敗";
+      result.textContent = "画像説明: " + (data.caption || "失敗");
+    });
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const situation = document.getElementById("situation").value;
 
-      result.textContent = "生成中...";
-
-      const res = await fetch("/generate", {
+      result.textContent = "プロンプト生成中...";
+      const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ situation }),
       });
 
       const data = await res.json();
-      result.textContent = data.prompt || "プロンプト生成に失敗しました。";
+      result.textContent = data.prompt || "生成失敗";
     });
   </script>
 </body>
 </html>
-
