@@ -53,4 +53,3 @@ app.post('/api/generate', async (req, res) => {
 app.listen(port, () => {
   console.log(`✅ サーバー起動中: http://localhost:${port}`);
 });
-
