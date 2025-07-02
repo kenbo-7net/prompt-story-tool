@@ -7,65 +7,75 @@
   <style>
     body {
       font-family: sans-serif;
+      background: #f7f7f7;
+      margin: 0;
       padding: 2rem;
-      background-color: #f8f9fa;
     }
     h1 {
-      color: #333;
+      text-align: center;
+    }
+    form {
+      max-width: 600px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
     }
     textarea {
       width: 100%;
       height: 120px;
+      margin-bottom: 1rem;
       padding: 1rem;
-      margin-top: 0.5rem;
       font-size: 1rem;
     }
     button {
+      background: #4CAF50;
+      color: white;
+      border: none;
       padding: 0.75rem 1.5rem;
       font-size: 1rem;
-      margin-top: 1rem;
+      border-radius: 5px;
+      cursor: pointer;
     }
-    #result {
+    .result {
       margin-top: 2rem;
+      background: #eef;
       padding: 1rem;
-      background-color: #fff;
-      border: 1px solid #ccc;
+      border-radius: 5px;
+      white-space: pre-wrap;
     }
   </style>
 </head>
 <body>
-  <h1>プロンプト自動生成ツール</h1>
-  <label for="situation">シチュエーションを入力してください：</label>
-  <textarea id="situation" placeholder="例：配信事故で自慰が流出してしまった清楚系ライバーが…"></textarea>
-  <br/>
-  <button onclick="generatePrompt()">プロンプトを生成</button>
+  <h1>AIプロンプト構成ツール</h1>
+  <form id="promptForm">
+    <label for="situation">シチュエーション（日本語）:</label><br/>
+    <textarea id="situation" name="situation" placeholder="例：ライバーが配信切り忘れて自慰がバレた"></textarea><br/>
+    <button type="submit">プロンプト生成</button>
+  </form>
 
-  <div id="result"></div>
+  <div class="result" id="result"></div>
 
   <script>
-    async function generatePrompt() {
+    const form = document.getElementById("promptForm");
+    const result = document.getElementById("result");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
       const situation = document.getElementById("situation").value;
-      const resultDiv = document.getElementById("result");
 
-      resultDiv.innerHTML = "生成中...";
+      result.textContent = "生成中...";
 
-      try {
-        const res = await fetch("/api/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ situation })
-        });
-        const data = await res.json();
-        if (res.ok) {
-          resultDiv.innerHTML = `<pre>${data.prompt}</pre>`;
-        } else {
-          resultDiv.innerHTML = `<p style="color:red;">エラー: ${data.error || "不明なエラー"}</p>`;
-        }
-      } catch (err) {
-        resultDiv.innerHTML = `<p style="color:red;">通信エラー: ${err.message}</p>`;
-      }
-    }
+      const res = await fetch("/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ situation }),
+      });
+
+      const data = await res.json();
+      result.textContent = data.prompt || "プロンプト生成に失敗しました。";
+    });
   </script>
 </body>
 </html>
-
