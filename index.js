@@ -1,76 +1,85 @@
-import express from 'express';
-import cors from 'cors';
-import bodyParser from 'body-parser';
-import dotenv from 'dotenv';
-import OpenAI from 'openai';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-dotenv.config();
+import express from "express";
+import multer from "multer";
+import dotenv from "dotenv";
+import { OpenAI } from "openai";
+import cors from "cors";
+import fs from "fs";
 
 const app = express();
+const upload = multer({ dest: "uploads/" });
+dotenv.config();
 const port = process.env.PORT || 10000;
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
-
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
+app.use(express.static("public"));
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// 静的ファイルをpublicフォルダから返す
-app.use(express.static(path.join(__dirname, 'public')));
-
-// ルートアクセス時にindex.htmlを返す
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// プロンプト生成処理
-app.post('/generate', async (req, res) => {
-  const { situation } = req.body;
-
-  const promptText = `シチュエーション「${situation}」に最適な画像生成プロンプトを以下形式で出力：
-1. prompt（英語で）
-2. ネガティブプロンプト
-3. 推奨構図
-4. LoRA候補`;
-
+// POST /generate-prompt（シチュエーション入力から）
+app.post("/generate-prompt", async (req, res) => {
   try {
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: promptText }],
-      temperature: 0.9
-    });
-
-    const output = completion.choices[0].message.content;
-
-    const result = {
-      prompt: '',
-      negative_prompt: '',
-      composition: '',
-      lora: ''
-    };
-
-    const lines = output.split('\n');
-    lines.forEach(line => {
-      if (line.includes('prompt')) result.prompt = line.replace(/.*?:/, '').trim();
-      else if (line.includes('ネガティブ')) result.negative_prompt = line.replace(/.*?:/, '').trim();
-      else if (line.includes('構図')) result.composition = line.replace(/.*?:/, '').trim();
-      else if (line.toLowerCase().includes('lora')) result.lora = line.replace(/.*?:/, '').trim();
-    });
-
-    res.json(result);
-  } catch (error) {
-    console.error('❌ APIエラー:', error);
-    res.status(500).send('生成エラーが発生しました');
+    const { situation } = req.body;
+    const prompt = await generatePromptFromText(situation);
+    res.json({ prompt });
+  } catch (err) {
+    console.error("🔥 プロンプト生成失敗", err);
+    res.status(500).json({ error: "プロンプト生成失敗" });
   }
 });
+
+// POST /analyze-image（画像からプロンプト生成）
+app.post("/analyze-image", upload.single("image"), async (req, res) => {
+  try {
+    const imagePath = req.file.path;
+    const base64Image = fs.readFileSync(imagePath, { encoding: "base64" });
+
+    const visionPrompt = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "この画像からAI生成プロンプトに変換してください。背景、キャラの特徴、体勢、プレイ内容まで詳細に。" },
+            {
+              type: "image_url",
+              image_url: { url: `data:image/jpeg;base64,${base64Image}` },
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = visionPrompt.choices[0].message.content;
+    res.json({ prompt: result });
+  } catch (err) {
+    console.error("🔥 画像プロンプト生成失敗", err);
+    res.status(500).json({ error: "画像プロンプト生成失敗" });
+  }
+});
+
+async function generatePromptFromText(situation) {
+  const systemPrompt = `以下のシチュエーションを、Stable Diffusion用プロンプトに変換してください。
+構成は以下：
+- 背景:
+- キャラの外見:
+- 表情・ポーズ:
+- 服装:
+- 絡み・プレイ内容:
+- ネガティブプロンプト:
+- 最適なLoRA:`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: situation },
+    ],
+  });
+
+  return response.choices[0].message.content;
+}
 
 app.listen(port, () => {
   console.log(`✅ サーバー起動中: http://localhost:${port}`);
 });
-
