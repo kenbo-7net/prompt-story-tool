@@ -2,82 +2,76 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>プロンプト生成ツール</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prompt Story Tool</title>
   <style>
     body {
       font-family: sans-serif;
+      background: #111;
+      color: #eee;
       padding: 2rem;
-      background-color: #f4f4f4;
     }
-    h1 {
-      margin-bottom: 1rem;
-    }
-    textarea {
+    textarea, input[type="text"] {
       width: 100%;
-      height: 80px;
-      font-size: 16px;
-      padding: 10px;
+      padding: 0.8rem;
       margin-bottom: 1rem;
+      background: #222;
+      border: 1px solid #444;
+      color: #fff;
     }
     button {
-      padding: 10px 20px;
-      font-size: 16px;
+      padding: 0.6rem 1.2rem;
+      background: #00c896;
+      color: #000;
+      font-weight: bold;
+      border: none;
       cursor: pointer;
     }
-    .output {
-      margin-top: 2rem;
-      background: #fff;
+    #result {
+      white-space: pre-wrap;
+      background: #222;
       padding: 1rem;
-      border-radius: 5px;
-    }
-    .output p {
-      margin: 0.5rem 0;
-    }
-    .label {
-      font-weight: bold;
+      border: 1px solid #444;
+      margin-top: 1rem;
     }
   </style>
 </head>
 <body>
-  <h1>画像生成プロンプト自動生成ツール</h1>
+  <h1>Prompt Story Tool</h1>
 
-  <textarea id="situation" placeholder="シチュエーションを入力してください..."></textarea>
-  <br/>
-  <button onclick="generatePrompt()">生成する</button>
+  <form id="promptForm">
+    <label>シチュエーション</label>
+    <textarea id="situation" rows="3" placeholder="例: 学校でバレずにイチャラブしたい教師と生徒"></textarea>
 
-  <div class="output" id="result" style="display:none;">
-    <p><span class="label">🎯 Prompt:</span> <span id="prompt"></span></p>
-    <p><span class="label">🚫 Negative Prompt:</span> <span id="negative_prompt"></span></p>
-    <p><span class="label">🖼 推奨構図:</span> <span id="composition"></span></p>
-    <p><span class="label">🔗 LoRA候補:</span> <span id="lora"></span></p>
-  </div>
+    <label>体位 / プレイ内容</label>
+    <input id="position" type="text" placeholder="例: 正常位で見つめ合いながら" />
+
+    <button type="submit">プロンプト生成</button>
+  </form>
+
+  <div id="result"></div>
 
   <script>
-    async function generatePrompt() {
-      const situation = document.getElementById("situation").value.trim();
-      if (!situation) {
-        alert("シチュエーションを入力してください");
-        return;
-      }
+    const form = document.getElementById("promptForm");
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const situation = document.getElementById("situation").value;
+      const position = document.getElementById("position").value;
 
-      const response = await fetch("/generate", {
+      const res = await fetch("/generate-prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ situation }),
+        body: JSON.stringify({ situation, position })
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        document.getElementById("prompt").textContent = data.prompt || "（なし）";
-        document.getElementById("negative_prompt").textContent = data.negative_prompt || "（なし）";
-        document.getElementById("composition").textContent = data.composition || "（なし）";
-        document.getElementById("lora").textContent = data.lora || "（なし）";
-        document.getElementById("result").style.display = "block";
-      } else {
-        alert("生成に失敗しました。");
-      }
-    }
+      const data = await res.json();
+      document.getElementById("result").textContent =
+        data.prompt + "\n\n" +
+        "【Negative Prompt】\n" + data.negative_prompt + "\n\n" +
+        "【LoRA Suggestion】\n" + data.lora + "\n\n" +
+        "【構図案】\n" + data.layout;
+    });
   </script>
 </body>
 </html>
+
