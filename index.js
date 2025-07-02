@@ -12,12 +12,18 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static('public'));
 
-// OpenAIクライアントの初期化
+// タイムアウト設定（15秒）
+app.use((req, res, next) => {
+  res.setTimeout(15000); 
+  next();
+});
+
+// OpenAI 初期化
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// メインのプロンプト生成API
+// プロンプト生成API
 app.post('/api/generate', async (req, res) => {
   const { situation } = req.body;
 
@@ -26,6 +32,8 @@ app.post('/api/generate', async (req, res) => {
   }
 
   try {
+    console.log('🔄 プロンプト生成リクエスト受信:', situation);
+
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
@@ -42,14 +50,17 @@ app.post('/api/generate', async (req, res) => {
     });
 
     const reply = response.choices[0].message.content;
+    console.log('✅ プロンプト生成成功');
     res.json({ prompt: reply });
   } catch (err) {
     console.error('❌ APIエラー:', err);
-    res.status(500).json({ error: 'プロンプト生成に失敗しました' });
+    res.status(500).json({ 
+      error: 'プロンプト生成に失敗しました',
+      detail: err.message || JSON.stringify(err)
+    });
   }
 });
 
-// サーバー起動
 app.listen(port, () => {
-  console.log(`✅ サーバー起動中: http://localhost:${port}`);
+  console.log(`🚀 サーバー起動中: http://localhost:${port}`);
 });
