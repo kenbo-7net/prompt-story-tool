@@ -5,28 +5,25 @@ import multer from 'multer';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import archiver from 'archiver';
 import { OpenAI } from 'openai';
 import dotenv from 'dotenv';
 dotenv.config();
 
-// ✅ 初期化
 const app = express();
 const port = process.env.PORT || 10000;
 const historyDir = path.join(os.tmpdir(), 'prompt-history');
 
-// ✅ 履歴保存フォルダの作成
 if (!fs.existsSync(historyDir)) {
   fs.mkdirSync(historyDir, { recursive: true });
 }
 
-// ✅ ミドルウェア
 app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static('public'));
 
 const upload = multer({ dest: 'uploads/' });
 
-// ✅ OpenRouter API
 const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: 'https://openrouter.ai/api/v1',
@@ -36,7 +33,7 @@ const openai = new OpenAI({
   }
 });
 
-// ✅ プロンプト生成API
+// プロンプト生成
 app.post('/api/generate', upload.single('image'), async (req, res) => {
   const { situation, model } = req.body;
 
@@ -46,8 +43,7 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
     const messages = [
       {
         role: 'system',
-        content:
-          'あなたはNSFW画像用のプロンプト職人です。日本語シチュエーションからStable Diffusion用英語プロンプト、ネガティブプロンプトを生成し、LoRA提案を出します。'
+        content: 'あなたはNSFW画像用のプロンプト職人です。日本語シチュエーションからStable Diffusion用英語プロンプト、ネガティブプロンプトを生成し、LoRA提案を出します。'
       },
       {
         role: 'user',
@@ -63,10 +59,9 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
 
     const reply = response.choices[0].message.content;
 
-    // ✅ 履歴保存
     const historyEntry = {
       prompt: reply,
-      negative_prompt: '[Negative Prompt]', // 実装時に必要に応じて分離
+      negative_prompt: '[Negative Prompt]', // ここは後で自動分離に拡張してもOK
       model: model || process.env.MODEL_NAME,
       timestamp: new Date().toISOString()
     };
@@ -82,8 +77,32 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
   }
 });
 
-// ✅ ZIPエクスポート
-import archiver from 'archiver';
+// 履歴取得
+app.get('/api/history', (req, res) => {
+  if (!fs.existsSync(historyDir)) return res.json([]);
+  const files = fs.readdirSync(historyDir);
+  const history = files.map(file => {
+    const content = fs.readFileSync(path.join(historyDir, file), 'utf-8');
+    return JSON.parse(content);
+  });
+  res.json(history);
+});
+
+// 再生成
+app.get('/api/regenerate/:index', (req, res) => {
+  const files = fs.readdirSync(historyDir);
+  const file = files[req.params.index];
+  const content = fs.readFileSync(path.join(historyDir, file), 'utf-8');
+  const { prompt, negative_prompt } = JSON.parse(content);
+  res.json({ prompt, negative_prompt });
+});
+
+// フィードバック処理（仮実装）
+app.post('/api/feedback/:index', (req, res) => {
+  res.json({ message: 'フィードバック受け取りました' });
+});
+
+// 履歴ZIP出力
 app.get('/api/export-zip', (req, res) => {
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', 'attachment; filename=prompt-history.zip');
@@ -94,7 +113,6 @@ app.get('/api/export-zip', (req, res) => {
   archive.finalize();
 });
 
-// ✅ サーバー起動
 app.listen(port, () => {
   console.log(`✅ サーバー起動中: http://localhost:${port}`);
 });
