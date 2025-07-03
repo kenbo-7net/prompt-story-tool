@@ -85,7 +85,7 @@
     };
 
     document.getElementById('zipDownload').onclick = () => {
-      window.location.href = '/api/zip';
+      window.location.href = '/api/export-zip';  // ✅ 修正済み
     };
 
     async function fetchHistory() {
