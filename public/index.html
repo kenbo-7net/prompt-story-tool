@@ -3,97 +3,119 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>AIプロンプト生成ツール</title>
+  <title>NSFW Prompt Tool</title>
   <style>
-    body {
-      font-family: sans-serif;
-      background: #f8f8f8;
-      padding: 2rem;
-    }
-    form {
-      background: white;
-      padding: 2rem;
-      border-radius: 10px;
-      max-width: 600px;
-      margin: auto;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
-    }
-    textarea, input[type="file"] {
-      width: 100%;
-      margin-bottom: 1rem;
-      padding: 1rem;
-    }
-    button {
-      padding: 1rem 2rem;
-      background: #4caf50;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      font-size: 1rem;
-      cursor: pointer;
-    }
-    .result {
-      margin-top: 2rem;
-      padding: 1rem;
-      background: #eef;
-      white-space: pre-wrap;
-      border-radius: 5px;
-    }
+    body { font-family: sans-serif; padding: 20px; background: #111; color: #eee; }
+    label, input, textarea, button { display: block; width: 100%; margin-bottom: 12px; }
+    .result { white-space: pre-wrap; background: #222; padding: 10px; border-radius: 6px; margin-top: 20px; }
+    .history-entry { background: #333; padding: 10px; margin: 5px 0; border-radius: 5px; }
+    .button-row button { margin-right: 8px; }
   </style>
 </head>
 <body>
-  <form id="promptForm">
-    <h2>画像＋シチュからプロンプト生成</h2>
+  <h1>NSFW Prompt Tool</h1>
 
-    <label>画像ファイルを選択（任意）:</label>
-    <input type="file" id="imageInput" accept="image/*" />
+  <form id="promptForm" enctype="multipart/form-data">
+    <label for="model">モデル名:</label>
+    <input type="text" id="model" name="model" placeholder="例: aAnythingV5" required />
 
-    <label>シチュエーション（日本語）:</label>
-    <textarea id="situation" placeholder="例：ライバーが配信切り忘れて自慰がバレた"></textarea>
+    <label for="situation">シチュエーション説明:</label>
+    <textarea id="situation" name="situation" rows="4" required></textarea>
 
-    <button type="submit">生成開始</button>
+    <label for="image">参考画像（任意）:</label>
+    <input type="file" id="image" name="image" accept="image/*" />
+
+    <button type="submit">プロンプト生成</button>
   </form>
 
-  <div class="result" id="result"></div>
+  <div class="result" id="resultBox" hidden>
+    <h3>🎯 Prompt</h3>
+    <p id="promptOutput"></p>
+
+    <h3>🛑 Negative Prompt</h3>
+    <p id="negativeOutput"></p>
+
+    <h3>🔗 LoRA Suggestions</h3>
+    <ul id="loraOutput"></ul>
+
+    <div class="button-row">
+      <button id="copyBtn">コピー</button>
+      <button id="saveBtn">保存</button>
+    </div>
+  </div>
+
+  <hr/>
+  <h2>📚 履歴一覧</h2>
+  <div id="historyList"></div>
+  <button id="zipDownload">履歴ZIPをダウンロード</button>
 
   <script>
-    const form = document.getElementById("promptForm");
-    const resultDiv = document.getElementById("result");
+    const form = document.getElementById('promptForm');
+    const resultBox = document.getElementById('resultBox');
+    const promptOutput = document.getElementById('promptOutput');
+    const negativeOutput = document.getElementById('negativeOutput');
+    const loraOutput = document.getElementById('loraOutput');
+    const historyList = document.getElementById('historyList');
 
-    form.addEventListener("submit", async (e) => {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      resultDiv.textContent = "生成中...";
-
-      const imageInput = document.getElementById("imageInput").files[0];
-      const situationText = document.getElementById("situation").value;
-
-      let captionText = "";
-
-      if (imageInput) {
-        const imageForm = new FormData();
-        imageForm.append("image", imageInput);
-
-        const captionRes = await fetch("/api/caption", {
-          method: "POST",
-          body: imageForm
-        });
-
-        const captionData = await captionRes.json();
-        captionText = captionData.caption || "";
-      }
-
-      const finalPromptInput = situationText + (captionText ? `。画像内容: ${captionText}` : "");
-
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ situation: finalPromptInput })
+      const formData = new FormData(form);
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        body: formData
       });
-
       const data = await res.json();
-      resultDiv.textContent = data.prompt || "プロンプト生成に失敗しました。";
+      promptOutput.textContent = data.prompt || '';
+      negativeOutput.textContent = data.negative_prompt || '';
+      loraOutput.innerHTML = (data.lora_suggestions || []).map(lora => `<li><a href="${lora.url}" target="_blank">${lora.name}</a></li>`).join('');
+      resultBox.hidden = false;
+      fetchHistory();
     });
+
+    document.getElementById('copyBtn').onclick = () => {
+      const text = `Prompt:\n${promptOutput.textContent}\n\nNegative:\n${negativeOutput.textContent}`;
+      navigator.clipboard.writeText(text);
+      alert('コピー完了');
+    };
+
+    document.getElementById('saveBtn').onclick = async () => {
+      await fetch('/api/save', { method: 'POST' });
+      alert('保存しました');
+      fetchHistory();
+    };
+
+    document.getElementById('zipDownload').onclick = () => {
+      window.location.href = '/api/zip';
+    };
+
+    async function fetchHistory() {
+      const res = await fetch('/api/history');
+      const history = await res.json();
+      historyList.innerHTML = history.map((item, i) => `
+        <div class="history-entry">
+          <strong>${i + 1}.</strong> ${item.timestamp}<br/>
+          Prompt: ${item.prompt}<br/>
+          <button onclick="regenerate(${i})">再生成</button>
+          <button onclick="feedback(${i})">👍 フィードバック</button>
+        </div>
+      `).join('');
+    }
+
+    async function regenerate(index) {
+      const res = await fetch('/api/regenerate/' + index);
+      const data = await res.json();
+      promptOutput.textContent = data.prompt;
+      negativeOutput.textContent = data.negative_prompt;
+    }
+
+    async function feedback(index) {
+      await fetch('/api/feedback/' + index, { method: 'POST' });
+      alert('フィードバックありがとう！');
+    }
+
+    fetchHistory();
   </script>
 </body>
 </html>
+
 
