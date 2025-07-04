@@ -1,12 +1,11 @@
-<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NSFW Prompt Tool</title>
   <style>
     body { font-family: sans-serif; padding: 20px; background: #111; color: #eee; }
-    label, input, textarea, button { display: block; width: 100%; margin-bottom: 12px; }
+    label, input, textarea, button, select { display: block; width: 100%; margin-bottom: 12px; }
     .result { white-space: pre-wrap; background: #222; padding: 10px; border-radius: 6px; margin-top: 20px; }
     .history-entry { background: #333; padding: 10px; margin: 5px 0; border-radius: 5px; }
     .button-row button { margin-right: 8px; }
@@ -24,6 +23,10 @@
 
     <label for="image">参考画像（任意）:</label>
     <input type="file" id="image" name="image" accept="image/*" />
+
+    <label for="loraTemplate">LoRAテンプレ選択:</label>
+    <select id="loraTemplate"></select>
+    <button type="button" id="applyTemplate">テンプレを反映</button>
 
     <button type="submit">プロンプト生成</button>
   </form>
@@ -56,6 +59,20 @@
     const negativeOutput = document.getElementById('negativeOutput');
     const loraOutput = document.getElementById('loraOutput');
     const historyList = document.getElementById('historyList');
+    const loraSelect = document.getElementById('loraTemplate');
+    const situationField = document.getElementById('situation');
+
+    // テンプレ取得＆ドロップダウン生成
+    async function loadTemplates() {
+      const res = await fetch('/api/lora-presets');
+      const data = await res.json();
+      loraSelect.innerHTML = data.map(t => `<option value="${t.prompt}">${t.label}</option>`).join('');
+    }
+
+    document.getElementById('applyTemplate').onclick = () => {
+      const selected = loraSelect.value;
+      situationField.value += (situationField.value ? '\n' : '') + selected;
+    };
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -85,7 +102,7 @@
     };
 
     document.getElementById('zipDownload').onclick = () => {
-      window.location.href = '/api/export-zip';  // ✅ 修正済み
+      window.location.href = '/api/zip';
     };
 
     async function fetchHistory() {
@@ -113,6 +130,7 @@
       alert('フィードバックありがとう！');
     }
 
+    loadTemplates();
     fetchHistory();
   </script>
 </body>
