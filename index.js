@@ -5,18 +5,18 @@ import multer from 'multer';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import dotenv from 'dotenv';
 import archiver from 'archiver';
 import { OpenAI } from 'openai';
-import dotenv from 'dotenv';
-dotenv.config();
+import { suggestLoRAStack } from './lora-suggester.js';
+import { registerFeedback } from './feedback.js';
 
+dotenv.config();
 const app = express();
 const port = process.env.PORT || 10000;
 const historyDir = path.join(os.tmpdir(), 'prompt-history');
 
-if (!fs.existsSync(historyDir)) {
-  fs.mkdirSync(historyDir, { recursive: true });
-}
+if (!fs.existsSync(historyDir)) fs.mkdirSync(historyDir, { recursive: true });
 
 app.use(cors());
 app.use(bodyParser.json());
@@ -33,86 +33,96 @@ const openai = new OpenAI({
   }
 });
 
-// プロンプト生成
+// ✅ プロンプト生成
 app.post('/api/generate', upload.single('image'), async (req, res) => {
-  const { situation, model } = req.body;
-
-  if (!situation) return res.status(400).json({ error: 'situationが必要です' });
+  const { situation, model, character, structure } = req.body;
+  if (!situation || !model) return res.status(400).json({ error: 'シチュエーションとモデル名が必要です' });
 
   try {
     const messages = [
       {
         role: 'system',
-        content: 'あなたはNSFW画像用のプロンプト職人です。日本語シチュエーションからStable Diffusion用英語プロンプト、ネガティブプロンプトを生成し、LoRA提案を出します。'
+        content: 'あなたはNSFW画像のプロンプト職人です。入力された日本語の説明をもとに、英語プロンプト・ネガティブプロンプト・LoRA提案を出力してください。'
       },
       {
         role: 'user',
-        content: `シチュエーション: ${situation}`
+        content: `シチュエーション: ${situation}\n構図: ${structure || '不明'}\nキャラ: ${character || '不明'}\nモデル: ${model}`
       }
     ];
 
     const response = await openai.chat.completions.create({
-      model: model || process.env.MODEL_NAME,
+      model,
       messages,
       temperature: 0.8
     });
 
     const reply = response.choices[0].message.content;
+    const prompt = reply.split('Negative Prompt:')[0].trim();
+    const negative_prompt = (reply.split('Negative Prompt:')[1] || '').split('LoRA Suggestion:')[0].trim();
+    const loras = suggestLoRAStack(situation + structure);
 
     const historyEntry = {
-      prompt: reply,
-      negative_prompt: '[Negative Prompt]', // ここは後で自動分離に拡張してもOK
-      model: model || process.env.MODEL_NAME,
+      prompt,
+      negative_prompt,
+      model,
+      character,
+      structure,
+      lora_suggestions: loras,
       timestamp: new Date().toISOString()
     };
 
     const filename = `history_${Date.now()}.json`;
-    const filepath = path.join(historyDir, filename);
-    fs.writeFileSync(filepath, JSON.stringify(historyEntry, null, 2));
+    fs.writeFileSync(path.join(historyDir, filename), JSON.stringify(historyEntry, null, 2));
 
-    res.json({ prompt: reply });
+    res.json(historyEntry);
   } catch (err) {
-    console.error('❌ APIエラー:', err);
-    res.status(500).json({ error: 'プロンプト生成に失敗しました' });
+    console.error(err);
+    res.status(500).json({ error: 'プロンプト生成失敗' });
   }
 });
 
-// 履歴取得
+// ✅ 履歴取得
 app.get('/api/history', (req, res) => {
-  if (!fs.existsSync(historyDir)) return res.json([]);
-  const files = fs.readdirSync(historyDir);
-  const history = files.map(file => {
-    const content = fs.readFileSync(path.join(historyDir, file), 'utf-8');
+  const files = fs.readdirSync(historyDir).filter(f => f.endsWith('.json'));
+  const history = files.map(f => {
+    const content = fs.readFileSync(path.join(historyDir, f), 'utf-8');
     return JSON.parse(content);
   });
   res.json(history);
 });
 
-// 再生成
-app.get('/api/regenerate/:index', (req, res) => {
-  const files = fs.readdirSync(historyDir);
-  const file = files[req.params.index];
-  const content = fs.readFileSync(path.join(historyDir, file), 'utf-8');
-  const { prompt, negative_prompt } = JSON.parse(content);
-  res.json({ prompt, negative_prompt });
-});
-
-// フィードバック処理（仮実装）
+// ✅ フィードバック受け取り
 app.post('/api/feedback/:index', (req, res) => {
-  res.json({ message: 'フィードバック受け取りました' });
+  const index = Number(req.params.index);
+  const files = fs.readdirSync(historyDir).filter(f => f.endsWith('.json'));
+  if (index < 0 || index >= files.length) return res.status(400).json({ error: '無効なインデックス' });
+
+  const filePath = path.join(historyDir, files[index]);
+  const history = JSON.parse(fs.readFileSync(filePath));
+  registerFeedback(history);
+  res.json({ message: '👍 ありがとう！学習に活かします' });
 });
 
-// 履歴ZIP出力
-app.get('/api/export-zip', (req, res) => {
+// ✅ ZIP出力
+app.get('/api/zip', (req, res) => {
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', 'attachment; filename=prompt-history.zip');
-
   const archive = archiver('zip', { zlib: { level: 9 } });
   archive.pipe(res);
   archive.directory(historyDir, false);
   archive.finalize();
 });
 
-app.listen(port, () => {
-  console.log(`✅ サーバー起動中: http://localhost:${port}`);
+// ✅ WebUI連携 or JSON出力（簡易）
+app.get('/api/export/:index', (req, res) => {
+  const index = Number(req.params.index);
+  const files = fs.readdirSync(historyDir).filter(f => f.endsWith('.json'));
+  if (index < 0 || index >= files.length) return res.status(400).json({ error: '無効なインデックス' });
+  const filePath = path.join(historyDir, files[index]);
+  res.download(filePath);
 });
+
+app.listen(port, () => {
+  console.log(`✅ Prompt Tool Server 起動: http://localhost:${port}`);
+});
+
