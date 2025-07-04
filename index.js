@@ -50,29 +50,24 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
       }
     ];
 
-    const response = await openai.chat.completions.create({
-      model,
-      messages,
-      temperature: 0.8
-    });
-
+    const response = await openai.chat.completions.create({ model, messages, temperature: 0.8 });
     const reply = response.choices[0].message.content;
     const prompt = reply.split('Negative Prompt:')[0].trim();
     const negative_prompt = (reply.split('Negative Prompt:')[1] || '').split('LoRA Suggestion:')[0].trim();
     const loras = suggestLoRAStack(situation + structure);
 
+    const characterDir = character ? path.join(historyDir, character) : historyDir;
+    if (!fs.existsSync(characterDir)) fs.mkdirSync(characterDir, { recursive: true });
+
     const historyEntry = {
-      prompt,
-      negative_prompt,
-      model,
-      character,
-      structure,
+      prompt, negative_prompt, model, character, structure,
       lora_suggestions: loras,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      feedback: null
     };
 
     const filename = `history_${Date.now()}.json`;
-    fs.writeFileSync(path.join(historyDir, filename), JSON.stringify(historyEntry, null, 2));
+    fs.writeFileSync(path.join(characterDir, filename), JSON.stringify(historyEntry, null, 2));
 
     res.json(historyEntry);
   } catch (err) {
@@ -83,24 +78,60 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
 
 // ✅ 履歴取得
 app.get('/api/history', (req, res) => {
-  const files = fs.readdirSync(historyDir).filter(f => f.endsWith('.json'));
-  const history = files.map(f => {
-    const content = fs.readFileSync(path.join(historyDir, f), 'utf-8');
-    return JSON.parse(content);
-  });
+  const allFiles = fs.readdirSync(historyDir, { withFileTypes: true });
+  const history = [];
+  for (const entry of allFiles) {
+    if (entry.isDirectory()) {
+      const subfiles = fs.readdirSync(path.join(historyDir, entry.name));
+      subfiles.forEach(f => {
+        const content = fs.readFileSync(path.join(historyDir, entry.name, f), 'utf-8');
+        history.push(JSON.parse(content));
+      });
+    }
+  }
   res.json(history);
 });
 
-// ✅ フィードバック受け取り
+// ✅ 再生成API
+app.get('/api/regenerate/:index', (req, res) => {
+  const index = Number(req.params.index);
+  const characters = fs.readdirSync(historyDir);
+  let counter = 0;
+  for (const char of characters) {
+    const files = fs.readdirSync(path.join(historyDir, char));
+    for (const f of files) {
+      if (counter === index) {
+        const filepath = path.join(historyDir, char, f);
+        const content = JSON.parse(fs.readFileSync(filepath));
+        return res.json(content);
+      }
+      counter++;
+    }
+  }
+  res.status(404).json({ error: '履歴が見つかりません' });
+});
+
+// ✅ フィードバックAPI
 app.post('/api/feedback/:index', (req, res) => {
   const index = Number(req.params.index);
-  const files = fs.readdirSync(historyDir).filter(f => f.endsWith('.json'));
-  if (index < 0 || index >= files.length) return res.status(400).json({ error: '無効なインデックス' });
-
-  const filePath = path.join(historyDir, files[index]);
-  const history = JSON.parse(fs.readFileSync(filePath));
-  registerFeedback(history);
-  res.json({ message: '👍 ありがとう！学習に活かします' });
+  const { like } = req.body;
+  const characters = fs.readdirSync(historyDir);
+  let counter = 0;
+  for (const char of characters) {
+    const files = fs.readdirSync(path.join(historyDir, char));
+    for (const f of files) {
+      if (counter === index) {
+        const filepath = path.join(historyDir, char, f);
+        const entry = JSON.parse(fs.readFileSync(filepath));
+        entry.feedback = like ? 'like' : 'dislike';
+        fs.writeFileSync(filepath, JSON.stringify(entry, null, 2));
+        registerFeedback(entry);
+        return res.json({ message: '👍 フィードバック反映しました' });
+      }
+      counter++;
+    }
+  }
+  res.status(404).json({ error: 'フィードバック対象が見つかりません' });
 });
 
 // ✅ ZIP出力
@@ -113,13 +144,21 @@ app.get('/api/zip', (req, res) => {
   archive.finalize();
 });
 
-// ✅ WebUI連携 or JSON出力（簡易）
+// ✅ 出力DL
 app.get('/api/export/:index', (req, res) => {
   const index = Number(req.params.index);
-  const files = fs.readdirSync(historyDir).filter(f => f.endsWith('.json'));
-  if (index < 0 || index >= files.length) return res.status(400).json({ error: '無効なインデックス' });
-  const filePath = path.join(historyDir, files[index]);
-  res.download(filePath);
+  const characters = fs.readdirSync(historyDir);
+  let counter = 0;
+  for (const char of characters) {
+    const files = fs.readdirSync(path.join(historyDir, char));
+    for (const f of files) {
+      if (counter === index) {
+        return res.download(path.join(historyDir, char, f));
+      }
+      counter++;
+    }
+  }
+  res.status(404).json({ error: 'エクスポート対象が見つかりません' });
 });
 
 app.listen(port, () => {
