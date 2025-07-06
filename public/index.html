@@ -9,6 +9,29 @@
     .result { white-space: pre-wrap; background: #222; padding: 10px; border-radius: 6px; margin-top: 20px; }
     .history-entry { background: #333; padding: 10px; margin: 5px 0; border-radius: 5px; }
     .button-row button { margin-right: 8px; }
+    .lora-checkbox { display: flex; align-items: center; margin: 4px 0; }
+    .lora-checkbox input { margin-right: 6px; }
+    .tooltip { position: relative; display: inline-block; cursor: pointer; }
+    .tooltip .tooltiptext {
+      visibility: hidden;
+      width: 200px;
+      background-color: #555;
+      color: #fff;
+      text-align: left;
+      padding: 5px;
+      border-radius: 6px;
+      position: absolute;
+      z-index: 1;
+      bottom: 100%;
+      left: 50%;
+      margin-left: -100px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .tooltip:hover .tooltiptext {
+      visibility: visible;
+      opacity: 1;
+    }
   </style>
 </head>
 <body>
@@ -24,9 +47,14 @@
     <label for="image">参考画像（任意）:</label>
     <input type="file" id="image" name="image" accept="image/*" />
 
-    <label for="loraTemplate">LoRAテンプレ選択:</label>
-    <select id="loraTemplate"></select>
-    <button type="button" id="applyTemplate">テンプレを反映</button>
+    <label>LoRAテンプレ選択（複数選択可）:</label>
+    <div id="loraCheckboxes"></div>
+    <button type="button" id="applySelectedLoras">選択を反映</button>
+    <button type="button" id="saveLoraGroup">このLoRAセットを保存</button>
+
+    <label for="savedGroups">保存済みグループ:</label>
+    <select id="savedGroups"></select>
+    <button type="button" id="applyGroup">グループを反映</button>
 
     <button type="submit">プロンプト生成</button>
   </form>
@@ -59,28 +87,60 @@
     const negativeOutput = document.getElementById('negativeOutput');
     const loraOutput = document.getElementById('loraOutput');
     const historyList = document.getElementById('historyList');
-    const loraSelect = document.getElementById('loraTemplate');
     const situationField = document.getElementById('situation');
+    const loraCheckboxes = document.getElementById('loraCheckboxes');
+    const savedGroups = document.getElementById('savedGroups');
 
-    // テンプレ取得＆ドロップダウン生成
+    let loraTemplates = [];
+
     async function loadTemplates() {
       const res = await fetch('/api/lora-presets');
       const data = await res.json();
-      loraSelect.innerHTML = data.map(t => `<option value="${t.prompt}">${t.label}</option>`).join('');
+      loraTemplates = data;
+      loraCheckboxes.innerHTML = data.map((t, i) => `
+        <div class="lora-checkbox">
+          <label class="tooltip">
+            <input type="checkbox" value="${t.prompt}" data-index="${i}" />
+            ${t.label}
+            <span class="tooltiptext">${t.description || '説明なし'}</span>
+          </label>
+        </div>
+      `).join('');
     }
 
-    document.getElementById('applyTemplate').onclick = () => {
-      const selected = loraSelect.value;
-      situationField.value += (situationField.value ? '\n' : '') + selected;
+    document.getElementById('applySelectedLoras').onclick = () => {
+      const selected = [...document.querySelectorAll('#loraCheckboxes input:checked')].map(e => e.value);
+      situationField.value += (situationField.value ? '\n' : '') + selected.join('\n');
+      localStorage.setItem('loraSelectionHistory', JSON.stringify(selected));
+    };
+
+    document.getElementById('saveLoraGroup').onclick = () => {
+      const selected = [...document.querySelectorAll('#loraCheckboxes input:checked')].map(e => e.value);
+      const name = prompt("グループ名を入力してください:");
+      if (name) {
+        const groups = JSON.parse(localStorage.getItem('loraGroups') || '{}');
+        groups[name] = selected;
+        localStorage.setItem('loraGroups', JSON.stringify(groups));
+        updateGroupList();
+        alert('保存しました');
+      }
+    };
+
+    function updateGroupList() {
+      const groups = JSON.parse(localStorage.getItem('loraGroups') || '{}');
+      savedGroups.innerHTML = Object.keys(groups).map(name => `<option value="${name}">${name}</option>`).join('');
+    }
+
+    document.getElementById('applyGroup').onclick = () => {
+      const groups = JSON.parse(localStorage.getItem('loraGroups') || '{}');
+      const selected = groups[savedGroups.value] || [];
+      situationField.value += (situationField.value ? '\n' : '') + selected.join('\n');
     };
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const formData = new FormData(form);
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        body: formData
-      });
+      const res = await fetch('/api/generate', { method: 'POST', body: formData });
       const data = await res.json();
       promptOutput.textContent = data.prompt || '';
       negativeOutput.textContent = data.negative_prompt || '';
@@ -126,15 +186,15 @@
     }
 
     async function feedback(index) {
-      await fetch('/api/feedback/' + index, { method: 'POST' });
+      await fetch('/api/feedback/' + index, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ like: true }) });
       alert('フィードバックありがとう！');
     }
 
     loadTemplates();
+    updateGroupList();
     fetchHistory();
   </script>
 </body>
 </html>
-
 
 
