@@ -15,7 +15,6 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 10000;
 const historyDir = path.join(os.tmpdir(), 'prompt-history');
-
 if (!fs.existsSync(historyDir)) fs.mkdirSync(historyDir, { recursive: true });
 
 app.use(cors());
@@ -24,6 +23,7 @@ app.use(express.static('public'));
 
 const upload = multer({ dest: 'uploads/' });
 
+// ✅ GPT-4o 設定（SDモデル名は別扱い）
 const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: 'https://openrouter.ai/api/v1',
@@ -33,10 +33,10 @@ const openai = new OpenAI({
   }
 });
 
-// ✅ プロンプト生成
+// ✅ プロンプト生成（GPT-4o）
 app.post('/api/generate', upload.single('image'), async (req, res) => {
-  const { situation, model, character, structure } = req.body;
-  if (!situation || !model) return res.status(400).json({ error: 'シチュエーションとモデル名が必要です' });
+  const { situation, model, character, structure, sd_model } = req.body;
+  if (!situation) return res.status(400).json({ error: 'シチュエーションが必要です' });
 
   try {
     const messages = [
@@ -46,11 +46,11 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
       },
       {
         role: 'user',
-        content: `シチュエーション: ${situation}\n構図: ${structure || '不明'}\nキャラ: ${character || '不明'}\nモデル: ${model}`
+        content: `シチュエーション: ${situation}\n構図: ${structure || '不明'}\nキャラ: ${character || '不明'}\n画像モデル: ${sd_model || '未指定'}`
       }
     ];
 
-    const response = await openai.chat.completions.create({ model, messages, temperature: 0.8 });
+    const response = await openai.chat.completions.create({ model: 'gpt-4o', messages, temperature: 0.8 });
     const reply = response.choices[0].message.content;
     const prompt = reply.split('Negative Prompt:')[0].trim();
     const negative_prompt = (reply.split('Negative Prompt:')[1] || '').split('LoRA Suggestion:')[0].trim();
@@ -60,7 +60,12 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
     if (!fs.existsSync(characterDir)) fs.mkdirSync(characterDir, { recursive: true });
 
     const historyEntry = {
-      prompt, negative_prompt, model, character, structure,
+      prompt,
+      negative_prompt,
+      model: 'gpt-4o',
+      sd_model,
+      character,
+      structure,
       lora_suggestions: loras,
       timestamp: new Date().toISOString(),
       feedback: null
