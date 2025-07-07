@@ -28,7 +28,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: 'https://openrouter.ai/api/v1',
   defaultHeaders: {
-    'HTTP-Referer': 'https://あなたのサービスURL',
+    'HTTP-Referer': 'https://prompt-story-tool.onrender.com',
     'X-Title': 'Prompt Story Tool'
   }
 });
@@ -164,4 +164,3 @@ app.get('/api/export/:index', (req, res) => {
 app.listen(port, () => {
   console.log(`✅ Prompt Tool Server 起動: http://localhost:${port}`);
 });
-
