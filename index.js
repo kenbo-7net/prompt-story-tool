@@ -23,7 +23,6 @@ app.use(express.static('public'));
 
 const upload = multer({ dest: 'uploads/' });
 
-// ✅ GPT-4o 設定（SDモデル名は別扱い）
 const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: 'https://openrouter.ai/api/v1',
@@ -33,7 +32,15 @@ const openai = new OpenAI({
   }
 });
 
-// ✅ プロンプト生成（GPT-4o）
+function ensureDir(dir) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+function handleError(res, err, label = '🚨 サーバーエラー') {
+  console.error(`${label}:`, err.message || err);
+  return res.status(500).json({ error: label });
+}
+
 app.post('/api/generate', upload.single('image'), async (req, res) => {
   const { situation, model, character, structure, sd_model } = req.body;
   if (!situation) return res.status(400).json({ error: 'シチュエーションが必要です' });
@@ -42,7 +49,7 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
     const messages = [
       {
         role: 'system',
-        content: 'あなたはNSFW画像のプロンプト職人です。入力された日本語の説明をもとに、英語プロンプト・ネガティブプロンプト・LoRA提案を出力してください。'
+        content: `あなたはNSFW画像用の英語プロンプト職人です。入力された日本語のシチュエーションから、英語の正しいプロンプトとネガティブプロンプト、Stable Diffusion用のLoRAタグ候補を生成してください。\n\n出力形式は以下の順で明記してください：\n1. Prompt:\n2. Negative Prompt:\n3. LoRA Suggestion:`
       },
       {
         role: 'user',
@@ -51,13 +58,17 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
     ];
 
     const response = await openai.chat.completions.create({ model: 'gpt-4o', messages, temperature: 0.8 });
-    const reply = response.choices[0].message.content;
-    const prompt = reply.split('Negative Prompt:')[0].trim();
-    const negative_prompt = (reply.split('Negative Prompt:')[1] || '').split('LoRA Suggestion:')[0].trim();
+    const reply = response?.choices?.[0]?.message?.content;
+    if (!reply) return res.status(502).json({ error: 'AI応答が不正です（reply missing）' });
+
+    const promptMatch = reply.match(/^(.*?)(Negative Prompt:|$)/s);
+    const negativeMatch = reply.match(/Negative Prompt:(.*?)(LoRA Suggestion:|$)/s);
+    const prompt = promptMatch?.[1]?.trim() || 'No prompt';
+    const negative_prompt = negativeMatch?.[1]?.trim() || '';
     const loras = suggestLoRAStack(situation + structure);
 
     const characterDir = character ? path.join(historyDir, character) : historyDir;
-    if (!fs.existsSync(characterDir)) fs.mkdirSync(characterDir, { recursive: true });
+    ensureDir(characterDir);
 
     const historyEntry = {
       prompt,
@@ -73,97 +84,110 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
 
     const filename = `history_${Date.now()}.json`;
     fs.writeFileSync(path.join(characterDir, filename), JSON.stringify(historyEntry, null, 2));
-
     res.json(historyEntry);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'プロンプト生成失敗' });
+    return handleError(res, err, 'プロンプト生成失敗');
   }
 });
 
-// ✅ 履歴取得
 app.get('/api/history', (req, res) => {
-  const allFiles = fs.readdirSync(historyDir, { withFileTypes: true });
-  const history = [];
-  for (const entry of allFiles) {
-    if (entry.isDirectory()) {
-      const subfiles = fs.readdirSync(path.join(historyDir, entry.name));
-      subfiles.forEach(f => {
-        const content = fs.readFileSync(path.join(historyDir, entry.name, f), 'utf-8');
-        history.push(JSON.parse(content));
-      });
+  try {
+    const allFiles = fs.readdirSync(historyDir, { withFileTypes: true });
+    const history = [];
+    for (const entry of allFiles) {
+      if (entry.isDirectory()) {
+        const subfiles = fs.readdirSync(path.join(historyDir, entry.name));
+        subfiles.forEach(f => {
+          const content = fs.readFileSync(path.join(historyDir, entry.name, f), 'utf-8');
+          history.push(JSON.parse(content));
+        });
+      }
     }
+    res.json(history);
+  } catch (err) {
+    return handleError(res, err, '履歴取得エラー');
   }
-  res.json(history);
 });
 
-// ✅ 再生成API
 app.get('/api/regenerate/:index', (req, res) => {
-  const index = Number(req.params.index);
-  const characters = fs.readdirSync(historyDir);
-  let counter = 0;
-  for (const char of characters) {
-    const files = fs.readdirSync(path.join(historyDir, char));
-    for (const f of files) {
-      if (counter === index) {
-        const filepath = path.join(historyDir, char, f);
-        const content = JSON.parse(fs.readFileSync(filepath));
-        return res.json(content);
+  try {
+    const index = Number(req.params.index);
+    const characters = fs.readdirSync(historyDir);
+    let counter = 0;
+    for (const char of characters) {
+      const files = fs.readdirSync(path.join(historyDir, char));
+      for (const f of files) {
+        if (counter === index) {
+          const filepath = path.join(historyDir, char, f);
+          const content = JSON.parse(fs.readFileSync(filepath));
+          return res.json(content);
+        }
+        counter++;
       }
-      counter++;
     }
+    res.status(404).json({ error: '履歴が見つかりません' });
+  } catch (err) {
+    return handleError(res, err, '再生成エラー');
   }
-  res.status(404).json({ error: '履歴が見つかりません' });
 });
 
-// ✅ フィードバックAPI
 app.post('/api/feedback/:index', (req, res) => {
-  const index = Number(req.params.index);
-  const { like } = req.body;
-  const characters = fs.readdirSync(historyDir);
-  let counter = 0;
-  for (const char of characters) {
-    const files = fs.readdirSync(path.join(historyDir, char));
-    for (const f of files) {
-      if (counter === index) {
-        const filepath = path.join(historyDir, char, f);
-        const entry = JSON.parse(fs.readFileSync(filepath));
-        entry.feedback = like ? 'like' : 'dislike';
-        fs.writeFileSync(filepath, JSON.stringify(entry, null, 2));
-        registerFeedback(entry);
-        return res.json({ message: '👍 フィードバック反映しました' });
+  try {
+    const index = Number(req.params.index);
+    const { like } = req.body;
+    const characters = fs.readdirSync(historyDir);
+    let counter = 0;
+    for (const char of characters) {
+      const files = fs.readdirSync(path.join(historyDir, char));
+      for (const f of files) {
+        if (counter === index) {
+          const filepath = path.join(historyDir, char, f);
+          const entry = JSON.parse(fs.readFileSync(filepath));
+          entry.feedback = like ? 'like' : 'dislike';
+          fs.writeFileSync(filepath, JSON.stringify(entry, null, 2));
+          registerFeedback(entry);
+          return res.json({ message: '👍 フィードバック反映しました' });
+        }
+        counter++;
       }
-      counter++;
     }
+    res.status(404).json({ error: 'フィードバック対象が見つかりません' });
+  } catch (err) {
+    return handleError(res, err, 'フィードバックエラー');
   }
-  res.status(404).json({ error: 'フィードバック対象が見つかりません' });
 });
 
-// ✅ ZIP出力
 app.get('/api/zip', (req, res) => {
-  res.setHeader('Content-Type', 'application/zip');
-  res.setHeader('Content-Disposition', 'attachment; filename=prompt-history.zip');
-  const archive = archiver('zip', { zlib: { level: 9 } });
-  archive.pipe(res);
-  archive.directory(historyDir, false);
-  archive.finalize();
+  try {
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename=prompt-history.zip');
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.pipe(res);
+    archive.directory(historyDir, false);
+    archive.finalize();
+  } catch (err) {
+    return handleError(res, err, 'ZIP出力エラー');
+  }
 });
 
-// ✅ 出力DL
 app.get('/api/export/:index', (req, res) => {
-  const index = Number(req.params.index);
-  const characters = fs.readdirSync(historyDir);
-  let counter = 0;
-  for (const char of characters) {
-    const files = fs.readdirSync(path.join(historyDir, char));
-    for (const f of files) {
-      if (counter === index) {
-        return res.download(path.join(historyDir, char, f));
+  try {
+    const index = Number(req.params.index);
+    const characters = fs.readdirSync(historyDir);
+    let counter = 0;
+    for (const char of characters) {
+      const files = fs.readdirSync(path.join(historyDir, char));
+      for (const f of files) {
+        if (counter === index) {
+          return res.download(path.join(historyDir, char, f));
+        }
+        counter++;
       }
-      counter++;
     }
+    res.status(404).json({ error: 'エクスポート対象が見つかりません' });
+  } catch (err) {
+    return handleError(res, err, 'エクスポート失敗');
   }
-  res.status(404).json({ error: 'エクスポート対象が見つかりません' });
 });
 
 app.listen(port, () => {
