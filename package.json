@@ -1,24 +1,33 @@
 {
   "name": "prompt-story-tool",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "NSFW Prompt Generator for Stable Diffusion with LoRA stack system",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "lint": "echo \"🔍 Linting disabled. Add ESLint if needed.\"",
+    "format": "prettier --write .",
+    "build": "echo \"🔧 No build step needed for Node.js\"",
+    "prod": "node index.js"
   },
   "dependencies": {
     "archiver": "^5.3.1",
     "body-parser": "^1.20.2",
+    "compression": "^1.7.4",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "moment": "^2.29.4",
     "multer": "^1.4.5-lts.1",
-    "openai": "^4.26.1"
+    "openai": "^4.26.1",
+    "sanitize-filename": "^1.6.3",
+    "uuid": "^9.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.0.2",
+    "prettier": "^3.2.5"
   },
   "author": "あなたの名前",
   "license": "MIT"
