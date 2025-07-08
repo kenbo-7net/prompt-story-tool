@@ -1,47 +1,50 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'fs/promises';
+import path, { dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// ログディレクトリ
+// ログ保存ディレクトリ
 const logDir = path.join(__dirname, 'logs');
-if (!fs.existsSync(logDir)) fs.mkdirSync(logDir);
+await fs.mkdir(logDir, { recursive: true });
 
 /**
- * ディレクトリ以下のすべてのJSON履歴ファイルを再帰的に取得
+ * 全履歴ファイルを再帰的に取得（.jsonのみ）
  */
-export function getHistoryFiles(baseDir) {
-  const files = [];
-  const entries = fs.readdirSync(baseDir, { withFileTypes: true });
+export async function getHistoryFiles(baseDir) {
+  const result = [];
+  const entries = await fs.readdir(baseDir, { withFileTypes: true });
+
   for (const entry of entries) {
-    const entryPath = path.join(baseDir, entry.name);
+    const fullPath = path.join(baseDir, entry.name);
     if (entry.isDirectory()) {
-      const subfiles = getHistoryFiles(entryPath);
-      files.push(...subfiles);
+      const nested = await getHistoryFiles(fullPath);
+      result.push(...nested);
     } else if (entry.isFile() && entry.name.endsWith('.json')) {
-      files.push(entryPath);
+      result.push(fullPath);
     }
   }
-  return files;
+  return result;
 }
 
 /**
- * 指定ファイルにフィードバックを書き込み、ログも保存
+ * 指定ファイルにフィードバックを保存 + ログ記録
  */
-export function addFeedbackToFile(filepath, feedback) {
-  if (!fs.existsSync(filepath)) return false;
-
+export async function addFeedbackToFile(filepath, feedback) {
   try {
-    const data = JSON.parse(fs.readFileSync(filepath));
+    const raw = await fs.readFile(filepath, 'utf-8');
+    const data = JSON.parse(raw);
     data.feedback = feedback;
-    fs.writeFileSync(filepath, JSON.stringify(data, null, 2));
+    await fs.writeFile(filepath, JSON.stringify(data, null, 2));
 
-    const logPath = path.join(logDir, 'feedback-log.txt');
-    const logEntry = `[${new Date().toISOString()}] ${path.basename(filepath)}\n${JSON.stringify(feedback)}\n\n`;
-    fs.appendFileSync(logPath, logEntry);
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      file: path.basename(filepath),
+      feedback
+    };
+
+    await writeLog('feedback', logEntry);
     return true;
   } catch (err) {
     console.error('📛 フィードバック保存エラー:', err);
@@ -50,21 +53,34 @@ export function addFeedbackToFile(filepath, feedback) {
 }
 
 /**
- * インデックスからファイルを選び、フィードバック追加
+ * インデックス指定でフィードバック保存
  */
-export function addFeedbackByIndex(baseDir, index, feedback) {
-  const files = getHistoryFiles(baseDir);
+export async function addFeedbackByIndex(baseDir, index, feedback) {
+  const files = await getHistoryFiles(baseDir);
   if (index < 0 || index >= files.length) return false;
-  return addFeedbackToFile(files[index], feedback);
+  return await addFeedbackToFile(files[index], feedback);
 }
 
 /**
- * 簡易ログ出力などにも使える（将来的な用途拡張）
+ * 簡易フィードバックログ（学習用など）
  */
-export function registerFeedback(entry) {
-  const short = entry?.prompt?.slice(0, 50)?.replaceAll('\n', ' ');
-  const logPath = path.join(logDir, 'ai-learning.txt');
-  const logEntry = `[${new Date().toISOString()}] ${short}\n\n`;
-  fs.appendFileSync(logPath, logEntry);
+export async function registerFeedback(entry) {
+  const short = entry?.prompt?.slice(0, 60)?.replaceAll('\n', ' ');
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    prompt: short
+  };
+
+  await writeLog('learning', logEntry);
 }
 
+/**
+ * ログファイルを日付別に保存
+ */
+async function writeLog(type, data) {
+  const date = new Date().toISOString().split('T')[0];
+  const filename = `${type}-log-${date}.jsonl`;
+  const logPath = path.join(logDir, filename);
+  const line = JSON.stringify(data) + '\n';
+  await fs.appendFile(logPath, line);
+}
