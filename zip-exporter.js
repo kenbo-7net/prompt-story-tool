@@ -3,15 +3,34 @@ import archiver from 'archiver';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import moment from 'moment';
+import sanitize from 'sanitize-filename';
 
-// 仮の履歴保存ディレクトリ（実際には履歴JSONをここに保存している想定）
 const historyDir = path.join(os.tmpdir(), 'prompt-history');
 
-// 履歴ZIP出力関数
+/**
+ * 再帰的にファイル一覧を取得（サブディレクトリ含む）
+ */
+function getAllFiles(dirPath, arrayOfFiles = []) {
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  entries.forEach((entry) => {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      getAllFiles(fullPath, arrayOfFiles);
+    } else if (entry.isFile() && entry.name.endsWith('.json')) {
+      arrayOfFiles.push(fullPath);
+    }
+  });
+  return arrayOfFiles;
+}
+
+/**
+ * 履歴ZIP出力関数
+ */
 export async function exportHistoryAsZip() {
   return new Promise((resolve, reject) => {
-    // 一時的なZIPファイルの保存先
-    const zipPath = path.join(os.tmpdir(), 'history_export.zip');
+    const timestamp = moment().format('YYYYMMDD_HHmmss');
+    const zipPath = path.join(os.tmpdir(), `history_${timestamp}.zip`);
     const output = fs.createWriteStream(zipPath);
     const archive = archiver('zip', { zlib: { level: 9 } });
 
@@ -20,27 +39,39 @@ export async function exportHistoryAsZip() {
       resolve(zipBuffer);
     });
 
-    archive.on('error', err => reject(err));
+    archive.on('error', (err) => reject(err));
     archive.pipe(output);
 
-    // 保存されている履歴ファイルを全て追加（なければサンプルデータを追加）
+    // 実ファイルが存在する場合のみ追加
     if (fs.existsSync(historyDir)) {
-      const files = fs.readdirSync(historyDir);
-      files.forEach(file => {
-        const filePath = path.join(historyDir, file);
-        archive.file(filePath, { name: file });
-      });
+      const files = getAllFiles(historyDir);
+      if (files.length === 0) {
+        addSampleToArchive(archive);
+      } else {
+        for (const filePath of files) {
+          const relativePath = path.relative(historyDir, filePath);
+          const safePath = sanitize(relativePath);
+          archive.file(filePath, { name: safePath });
+        }
+      }
     } else {
-      // テスト用サンプルJSONを追加
-      const sampleData = JSON.stringify({
-        prompt: 'High quality 8K hentai scene with blonde girl',
-        negative_prompt: 'bad anatomy, blurry, low quality',
-        model: 'aamAnyloraAnimeMix_v1',
-        timestamp: new Date().toISOString()
-      }, null, 2);
-      archive.append(sampleData, { name: 'sample-history.json' });
+      addSampleToArchive(archive);
     }
 
     archive.finalize();
   });
+}
+
+/**
+ * サンプルデータをZIPに追加（履歴がない場合）
+ */
+function addSampleToArchive(archive) {
+  const sampleData = JSON.stringify({
+    prompt: 'High quality 8K hentai scene with blonde girl',
+    negative_prompt: 'bad anatomy, blurry, low quality',
+    model: 'aamAnyloraAnimeMix_v1',
+    timestamp: new Date().toISOString()
+  }, null, 2);
+
+  archive.append(sampleData, { name: 'sample-history.json' });
 }
