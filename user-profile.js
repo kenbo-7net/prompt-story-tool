@@ -1,10 +1,12 @@
-const profile = require('./user-profile');
-
-const history = [
-  { loras: ['vtuberShame_v1', 'liveStreamAccident_v2'] },
-  { loras: ['vtuberShame_v1'] },
-  { loras: ['animeLineSharp_v2'] }
-];
-
-const top5 = profile.analyzeHistory(history);
-console.log(top5); // 頻出LoRA順に並ぶ
+module.exports = {
+  analyzeHistory: (historyList) => {
+    const freq = {};
+    for (const item of historyList) {
+      item.loras.forEach(l => freq[l] = (freq[l] || 0) + 1);
+    }
+    return Object.entries(freq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name]) => name);
+  }
+};
